@@ -1,0 +1,9 @@
+# 复制此文件为 .dev.vars 用于本地 `npm run dev` 调试（.dev.vars 已被 .gitignore 忽略）
+B2_KEY_ID=004xxxxxxxxxxxxxxxxxxxxxx
+B2_APPLICATION_KEY=K004xxxxxxxxxxxxxxxxxxxxxxxxxxx
+AUTH_TOKEN=your-strong-admin-password-or-api-key
+
+# 可在本地覆盖 wrangler.toml 中的变量：
+B2_BUCKET=your-b2-bucket-name
+B2_ENDPOINT=s3.us-west-004.backblazeb2.com
+ALLOWED_REFERERS=

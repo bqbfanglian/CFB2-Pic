@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CF-B2 图床 · Cloudflare Worker + Backblaze B2</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- Auth / Login Gate -->
+  <section id="auth-screen" class="auth-screen hidden">
+    <div class="auth-card">
+      <div class="brand-hero">
+        <img src="/favicon.svg" alt="Logo" class="brand-icon-lg" />
+        <h1>CF-B2 私有图床</h1>
+        <p class="muted">Cloudflare Edge 缓存加速 · Backblaze B2 存储</p>
+      </div>
+
+      <div id="unconfigured-alert" class="alert alert-warn hidden">
+        <strong>服务端尚未设置 AUTH_TOKEN</strong>
+        <p id="unconfigured-msg">请在 Cloudflare Worker Secrets 或本地 <code>.dev.vars</code> 中配置 <code>AUTH_TOKEN</code>。</p>
+      </div>
+
+      <form id="login-form" class="login-form">
+        <label for="login-password">管理员密码 / API Key</label>
+        <div class="password-input-wrap">
+          <input
+            type="password"
+            id="login-password"
+            placeholder="输入 AUTH_TOKEN 解锁图床..."
+            autocomplete="current-password"
+            required
+          />
+          <button type="button" id="toggle-pwd-btn" class="icon-btn" title="显示/隐藏密码">👁️</button>
+        </div>
+        <div id="login-error" class="error-text hidden"></div>
+        <button type="submit" id="login-submit-btn" class="btn btn-primary btn-block">
+          解锁进入
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <!-- Main Authenticated App -->
+  <div id="app-shell" class="app-shell hidden">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <img src="/favicon.svg" alt="Logo" class="brand-icon" />
+          <div>
+            <span class="brand-title">CF-B2 图床</span>
+            <span id="header-bucket-badge" class="badge badge-subtle">B2 Storage</span>
+          </div>
+        </div>
+
+        <nav class="nav-tabs" role="tablist">
+          <button type="button" class="nav-tab active" data-tab="upload">上传图片</button>
+          <button type="button" class="nav-tab" data-tab="gallery">相册管理</button>
+          <button type="button" class="nav-tab" data-tab="clients">客户端接入 &amp; 状态</button>
+        </nav>
+
+        <div class="topbar-actions">
+          <button type="button" id="theme-toggle-btn" class="btn btn-ghost btn-sm" title="切换深浅色主题">🌓</button>
+          <button type="button" id="logout-btn" class="btn btn-ghost btn-sm" title="退出登录">退出</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="main-container">
+      <!-- B2 Missing Config Banner -->
+      <div id="b2-config-warning" class="alert alert-warn hidden">
+        <strong>Backblaze B2 配置未完成：</strong>
+        <span id="b2-config-warning-text"></span>
+      </div>
+
+      <!-- TAB 1: UPLOAD -->
+      <section id="tab-upload" class="tab-panel active">
+        <div class="settings-card">
+          <div class="settings-grid">
+            <div class="field">
+              <label for="opt-process">前端压缩 / 转格式</label>
+              <select id="opt-process">
+                <option value="webp">智能压缩并转 WebP（推荐，跳过动图/SVG）</option>
+                <option value="compress">仅压缩体积（保持原格式）</option>
+                <option value="original">原图无损直传（不处理）</option>
+              </select>
+            </div>
+
+            <div class="field" id="field-quality">
+              <label for="opt-quality">压缩画质 (<span id="quality-val">84%</span>)</label>
+              <input type="range" id="opt-quality" min="55" max="96" step="1" value="84" />
+            </div>
+
+            <div class="field" id="field-max-dim">
+              <label for="opt-max-dim">最大边长限制</label>
+              <select id="opt-max-dim">
+                <option value="0">不限制分辨率</option>
+                <option value="1920">1920 px (1080p)</option>
+                <option value="2560">2560 px (2K)</option>
+                <option value="3840">3840 px (4K)</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="opt-naming">命名与目录策略</label>
+              <select id="opt-naming">
+                <option value="date-random">日期目录 + 随机短链 (YYYY/MM/DD/xxx)</option>
+                <option value="date-original">日期目录 + 原文件名</option>
+                <option value="flat-random">纯随机短链 (根目录)</option>
+                <option value="original">保留原文件名</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="opt-folder">自定义子目录（可选）</label>
+              <input type="text" id="opt-folder" placeholder="例如: blog 或 wallpapers" />
+            </div>
+          </div>
+        </div>
+
+        <div id="dropzone" class="dropzone" tabindex="0">
+          <input
+            type="file"
+            id="file-input"
+            accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/svg+xml,image/bmp,image/x-icon,image/heic,image/heif"
+            multiple
+            hidden
+          />
+          <div class="dropzone-content">
+            <div class="dropzone-icon">☁️</div>
+            <h2>拖拽图片到此处、点击选择，或直接按 <kbd>Ctrl</kbd> + <kbd>V</kbd> 粘贴截图</h2>
+            <p class="muted">
+              支持 JPG / PNG / WebP / GIF / AVIF / SVG / BMP / ICO · 支持多图并发上传
+              <span id="max-size-hint"></span>
+            </p>
+            <button type="button" id="pick-files-btn" class="btn btn-primary">选择图片上传</button>
+          </div>
+        </div>
+
+        <!-- Upload Queue & Results -->
+        <div id="upload-results-section" class="results-section hidden">
+          <div class="results-toolbar">
+            <div class="results-title">
+              <h3>本次上传结果</h3>
+              <span id="upload-counter-badge" class="badge">0</span>
+            </div>
+            <div class="results-actions">
+              <div class="format-pills" id="upload-format-pills">
+                <button type="button" class="pill active" data-fmt="direct">直链 URL</button>
+                <button type="button" class="pill" data-fmt="markdown">Markdown</button>
+                <button type="button" class="pill" data-fmt="html">HTML</button>
+                <button type="button" class="pill" data-fmt="bbcode">BBCode</button>
+              </div>
+              <button type="button" id="copy-all-uploaded-btn" class="btn btn-secondary btn-sm">
+                复制全部链接
+              </button>
+              <button type="button" id="clear-uploaded-btn" class="btn btn-ghost btn-sm">
+                清空列表
+              </button>
+            </div>
+          </div>
+
+          <div id="upload-list" class="upload-list"></div>
+        </div>
+      </section>
+
+      <!-- TAB 2: GALLERY -->
+      <section id="tab-gallery" class="tab-panel">
+        <div class="gallery-toolbar">
+          <div class="gallery-filters">
+            <input
+              type="search"
+              id="gallery-search"
+              class="input-search"
+              placeholder="搜索文件名或路径..."
+            />
+            <select id="gallery-folder-select">
+              <option value="">全部目录</option>
+            </select>
+            <button type="button" id="gallery-refresh-btn" class="btn btn-secondary btn-sm">
+              刷新列表
+            </button>
+          </div>
+
+          <div class="gallery-meta">
+            <span id="gallery-stats" class="badge badge-subtle">加载中...</span>
+            <button type="button" id="gallery-select-all-btn" class="btn btn-ghost btn-sm">
+              全选本页
+            </button>
+          </div>
+        </div>
+
+        <!-- Batch Action Bar -->
+        <div id="batch-bar" class="batch-bar hidden">
+          <span>已选中 <strong id="batch-count">0</strong> 张图片</span>
+          <div class="batch-actions">
+            <button type="button" class="btn btn-secondary btn-sm" data-batch-copy="direct">复制直链</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-batch-copy="markdown">复制 Markdown</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-batch-copy="html">复制 HTML</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-batch-copy="bbcode">复制 BBCode</button>
+            <button type="button" id="batch-delete-btn" class="btn btn-danger btn-sm">批量删除</button>
+            <button type="button" id="batch-cancel-btn" class="btn btn-ghost btn-sm">取消选择</button>
+          </div>
+        </div>
+
+        <div id="gallery-empty" class="empty-state hidden">
+          <p>暂无图片，快去上传第一张图片吧！</p>
+        </div>
+
+        <div id="gallery-grid" class="gallery-grid"></div>
+
+        <div id="gallery-load-more-wrap" class="load-more-wrap hidden">
+          <button type="button" id="gallery-load-more-btn" class="btn btn-secondary">
+            加载更多图片
+          </button>
+        </div>
+      </section>
+
+      <!-- TAB 3: CLIENTS & STATUS -->
+      <section id="tab-clients" class="tab-panel">
+        <div class="cards-two-col">
+          <!-- System Status Card -->
+          <div class="info-card">
+            <div class="card-header-row">
+              <h3>存储桶与边缘缓存状态</h3>
+              <button type="button" id="ping-b2-btn" class="btn btn-secondary btn-sm">
+                测试 B2 连通性
+              </button>
+            </div>
+            <div id="ping-result" class="ping-banner hidden"></div>
+            <dl class="kv-list" id="status-kv-list">
+              <div><dt>B2 Bucket</dt><dd id="st-bucket">-</dd></div>
+              <div><dt>S3 Endpoint</dt><dd id="st-endpoint">-</dd></div>
+              <div><dt>Region</dt><dd id="st-region">-</dd></div>
+              <div><dt>公开外链域名</dt><dd id="st-baseurl">-</dd></div>
+              <div><dt>单图大小上限</dt><dd id="st-maxsize">-</dd></div>
+              <div><dt>边缘缓存时长</dt><dd id="st-cache">-</dd></div>
+              <div><dt>Referer 防盗链</dt><dd id="st-hotlink">-</dd></div>
+            </dl>
+          </div>
+
+          <!-- PicGo Config Card -->
+          <div class="info-card">
+            <h3>PicGo 配置指南</h3>
+            <p class="muted small">
+              安装 PicGo 插件 <code>web-uploader</code>（自定义 Web 图床），填入以下参数即可一键快捷键上传：
+            </p>
+            <div class="code-field">
+              <label>API 地址</label>
+              <div class="copy-row">
+                <input type="text" id="cfg-picgo-url" readonly />
+                <button type="button" class="btn btn-secondary btn-sm" data-copy-target="cfg-picgo-url">复制</button>
+              </div>
+            </div>
+            <div class="code-field">
+              <label>POST 参数名</label>
+              <div class="copy-row">
+                <input type="text" id="cfg-picgo-param" value="file" readonly />
+                <button type="button" class="btn btn-secondary btn-sm" data-copy-target="cfg-picgo-param">复制</button>
+              </div>
+            </div>
+            <div class="code-field">
+              <label>JSON 路径</label>
+              <div class="copy-row">
+                <input type="text" id="cfg-picgo-jsonpath" value="url" readonly />
+                <button type="button" class="btn btn-secondary btn-sm" data-copy-target="cfg-picgo-jsonpath">复制</button>
+              </div>
+            </div>
+            <div class="code-field">
+              <label>自定义请求头（将 YOUR_AUTH_TOKEN 替换为你的密码）</label>
+              <div class="copy-row">
+                <input type="text" id="cfg-picgo-headers" value='{"X-API-Key":"YOUR_AUTH_TOKEN"}' readonly />
+                <button type="button" class="btn btn-secondary btn-sm" data-copy-target="cfg-picgo-headers">复制</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ShareX Config Card -->
+          <div class="info-card">
+            <h3>ShareX 一键导入 (.sxcu)</h3>
+            <p class="muted small">
+              可选填入你的 API Key 生成专属 <code>.sxcu</code> 文件，双击即可在 Windows ShareX 中自动完成配置：
+            </p>
+            <div class="code-field">
+              <label for="sharex-token-input">API Key（仅在浏览器本地生成配置文件，不会上传）</label>
+              <input type="password" id="sharex-token-input" placeholder="留空则使用占位符 YOUR_AUTH_TOKEN" />
+            </div>
+            <pre id="cfg-sharex-preview" class="code-block"></pre>
+            <div class="btn-row">
+              <button type="button" id="download-sxcu-btn" class="btn btn-primary btn-sm">
+                下载 ShareX 配置 (.sxcu)
+              </button>
+              <button type="button" id="copy-sxcu-btn" class="btn btn-secondary btn-sm">
+                复制 JSON
+              </button>
+            </div>
+          </div>
+
+          <!-- cURL / CLI Card -->
+          <div class="info-card">
+            <h3>命令行 cURL / 脚本上传示例</h3>
+            <p class="muted small">支持 <code>multipart/form-data</code>、二进制直传以及 Base64 JSON 上传：</p>
+            <pre id="cfg-curl-preview" class="code-block"></pre>
+            <div class="btn-row">
+              <button type="button" id="copy-curl-btn" class="btn btn-secondary btn-sm">
+                复制 cURL 命令
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Lightbox Modal -->
+  <div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true">
+    <button type="button" id="lightbox-close" class="lightbox-close" title="关闭 (Esc)">✕</button>
+    <div class="lightbox-body">
+      <img id="lightbox-img" src="" alt="Preview" />
+      <div class="lightbox-caption">
+        <span id="lightbox-title"></span>
+        <div class="lightbox-actions">
+          <a id="lightbox-open-raw" href="#" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">新窗口原图</a>
+          <button type="button" id="lightbox-copy-url" class="btn btn-primary btn-sm">复制直链</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

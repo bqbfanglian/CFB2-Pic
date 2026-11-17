@@ -1,0 +1,46 @@
+name = "cf-b2-images"
+main = "src/index.ts"
+compatibility_date = "2025-03-01"
+
+# 静态前端资源目录（免费由 Cloudflare Edge 托管）
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/upload", "/i/*", "/file/*", "/health"]
+
+[vars]
+# Backblaze B2 存储桶名称（必填）
+B2_BUCKET = "your-b2-bucket-name"
+
+# Backblaze B2 S3 Endpoint（必填，在 B2 桶详情页查看，如 s3.us-west-004.backblazeb2.com）
+B2_ENDPOINT = "s3.us-west-004.backblazeb2.com"
+
+# B2 区域（可选，留空会自动从 B2_ENDPOINT 解析，如 us-west-004）
+B2_REGION = ""
+
+# 自定义公开外链域名（可选，如 https://img.example.com；留空则自动使用当前访问域名）
+PUBLIC_BASE_URL = ""
+
+# 桶内统一存储前缀（可选，如 "images"，留空则直接存放在按日期目录中）
+UPLOAD_PREFIX = ""
+
+# 默认命名规则：date-random | date-original | flat-random | original
+PATH_STRATEGY = "date-random"
+
+# 单张图片最大上传体积（MB）
+MAX_FILE_SIZE_MB = "25"
+
+# 边缘与浏览器缓存时长（秒，默认 31536000 = 1 年）
+CACHE_TTL_SECONDS = "31536000"
+
+# 防盗链 Referer 域名白名单（可选，逗号分隔，支持通配符如 "example.com, *.mysite.org"；留空表示关闭防盗链）
+ALLOWED_REFERERS = ""
+
+# 开启防盗链时，是否允许空 Referer（浏览器地址栏直接打开、Markdown 客户端预览等，默认 "true"）
+ALLOW_EMPTY_REFERER = "true"
+
+# 敏感密钥请勿直接写在 wrangler.toml 中！
+# 部署时请通过以下命令设置 Secret（或在 Cloudflare 控制台 -> Settings -> Variables and Secrets 添加）：
+#   npx wrangler secret put B2_KEY_ID
+#   npx wrangler secret put B2_APPLICATION_KEY
+#   npx wrangler secret put AUTH_TOKEN
