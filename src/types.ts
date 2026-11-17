@@ -18,9 +18,8 @@ export interface Env {
   AUTH_TOKEN?: string;
 
   // Optional Vars
-  B2_REGION?: string;
+  B2_REGION?: string; // Fallback signing region for custom S3 endpoints.
   PUBLIC_BASE_URL?: string;
-  UPLOAD_PREFIX?: string;
   PATH_STRATEGY?: string;
   MAX_FILE_SIZE_MB?: string;
   CACHE_TTL_SECONDS?: string;
@@ -40,7 +39,6 @@ export interface AppConfig {
   isVirtualHostedEndpoint: boolean;
   authToken: string;
   publicBaseUrl: string;
-  uploadPrefix: string;
   pathStrategy: NamingStrategy;
   maxFileSizeBytes: number;
   maxFileSizeMb: number;

@@ -90,6 +90,8 @@
      - （可选）`ALLOWED_REFERERS` ➡️ 防盗链白名单，如需防盗链可填 `yourblog.com, *.yourblog.com`；留空表示公开访问
 5. 添加完成后点击 **Save and Deploy**（保存并重新部署），让配置立即生效。
 
+部署后，实际生效的 B2 签名区域可在图床后台 **「客户端接入 & 状态」** 的 **Region** 一栏查看。
+
 ---
 
 #### 3. 绑定自定义域名（强烈推荐）
@@ -161,13 +163,15 @@
 | `B2_APPLICATION_KEY` | Secret | **是** | Backblaze Application Key 的 `applicationKey` |
 | `AUTH_TOKEN` | Secret | **是** | Web 管理员登录密码 & 第三方客户端上传 API Key |
 | `B2_BUCKET` | Text (Var) | **是** | 你的 Backblaze B2 存储桶名称 |
-| `B2_ENDPOINT` | Text (Var) | **是** | 你的 B2 S3 Endpoint（如 `s3.us-west-004.backblazeb2.com`） |
+| `B2_ENDPOINT` | Text (Var) | **是** | 从 Backblaze 控制台复制的 S3 Endpoint（如 `s3.us-west-004.backblazeb2.com`），Worker 从官方域名自动解析签名区域 |
 | `PUBLIC_BASE_URL` | Text (Var) | 否 | 自定义外链域名（如 `https://img.example.com`），留空自动使用当前访问域名 |
 | `PATH_STRATEGY` | Text (Var) | 否 | 默认文件命名策略：`date-random` / `date-original` / `flat-random` / `original` |
 | `MAX_FILE_SIZE_MB` | Text (Var) | 否 | 单图最大限制（MB，默认 `25`） |
 | `CACHE_TTL_SECONDS` | Text (Var) | 否 | 边缘缓存时长（秒，默认 `31536000` 即 1 年） |
 | `ALLOWED_REFERERS` | Text (Var) | 否 | 防盗链白名单，如 `example.com, *.myblog.org`（留空则关闭防盗链） |
 | `ALLOW_EMPTY_REFERER` | Text (Var) | 否 | 是否允许无 Referer 直接打开图片（默认 `true`） |
+
+使用自定义 S3 Endpoint 时，可在部署配置中设置 `B2_REGION` 作为签名区域。该变量留空时使用 `us-west-004`。
 
 ---
 

@@ -12,17 +12,11 @@ run_worker_first = ["/api/*", "/upload", "/i/*", "/file/*", "/health"]
 # Backblaze B2 存储桶名称（必填）
 B2_BUCKET = "your-b2-bucket-name"
 
-# Backblaze B2 S3 Endpoint（必填，在 B2 桶详情页查看，如 s3.us-west-004.backblazeb2.com）
+# Backblaze B2 S3 Endpoint（必填，从 B2 桶详情页复制，签名区域从此地址解析）
 B2_ENDPOINT = "s3.us-west-004.backblazeb2.com"
-
-# B2 区域（可选，留空会自动从 B2_ENDPOINT 解析，如 us-west-004）
-B2_REGION = ""
 
 # 自定义公开外链域名（可选，如 https://img.example.com；留空则自动使用当前访问域名）
 PUBLIC_BASE_URL = ""
-
-# 桶内统一存储前缀（可选，如 "images"，留空则直接存放在按日期目录中）
-UPLOAD_PREFIX = ""
 
 # 默认命名规则：date-random | date-original | flat-random | original
 PATH_STRATEGY = "date-random"

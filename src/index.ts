@@ -201,7 +201,6 @@ async function handleStatus(
     region: config.b2Region,
     publicBaseUrl: resolvePublicBaseUrl(request, config.publicBaseUrl),
     customBaseUrlConfigured: Boolean(config.publicBaseUrl),
-    uploadPrefix: config.uploadPrefix,
     pathStrategy: config.pathStrategy,
     maxFileSizeMb: config.maxFileSizeMb,
     cacheTtlSeconds: config.cacheTtlSeconds,
@@ -383,7 +382,6 @@ async function handleUpload(
       originalName: item.originalName,
       mimeType,
       strategy,
-      uploadPrefix: config.uploadPrefix,
       customFolder,
     });
 
@@ -444,29 +442,17 @@ async function handleListImages(
 
   const config = loadConfig(env, { requireB2: true });
   const url = new URL(request.url);
-  const rawSubPrefix = normalizePrefix(url.searchParams.get("prefix") || "");
+  const folder = normalizePrefix(url.searchParams.get("prefix") || "");
   const cursor = url.searchParams.get("cursor") || undefined;
   const search = (url.searchParams.get("search") || "").trim().toLowerCase();
   const limitParam = Number.parseInt(url.searchParams.get("limit") || "200", 10);
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 1000) : 200;
 
-  let effectivePrefix = "";
-  if (config.uploadPrefix && rawSubPrefix) {
-    effectivePrefix = rawSubPrefix.startsWith(config.uploadPrefix)
-      ? rawSubPrefix
-      : `${config.uploadPrefix}/${rawSubPrefix}`;
-  } else {
-    effectivePrefix = rawSubPrefix || config.uploadPrefix;
-  }
-  if (effectivePrefix && !effectivePrefix.endsWith("/")) {
-    effectivePrefix = `${effectivePrefix}/`;
-  }
-
   // Fetch up to 1,000 objects in a single B2 Class C call so we can sort newest-first!
   const listResult = await b2ListObjects(
     config,
     {
-      prefix: effectivePrefix || undefined,
+      prefix: folder ? `${folder}/` : undefined,
       cursor,
       maxKeys: 1000,
     },

@@ -208,7 +208,6 @@ export interface BuildKeyOptions {
   originalName: string;
   mimeType: string;
   strategy: NamingStrategy;
-  uploadPrefix?: string;
   customFolder?: string;
   now?: Date;
 }
@@ -222,9 +221,6 @@ export function buildObjectKey(options: BuildKeyOptions): string {
 
   const ext = extensionForMime(options.mimeType, options.originalName);
   const prefixParts: string[] = [];
-
-  const rootPrefix = normalizePrefix(options.uploadPrefix);
-  if (rootPrefix) prefixParts.push(rootPrefix);
 
   const subFolder = normalizePrefix(options.customFolder);
   if (subFolder) prefixParts.push(subFolder);

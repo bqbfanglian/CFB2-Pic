@@ -197,9 +197,16 @@ describe("AWS Signature V4 & Backblaze B2 S3 Utilities", () => {
     const p2 = parseEndpointAndRegion(
       "https://my-bucket.s3.eu-central-003.backblazeb2.com/",
       "my-bucket",
+      "us-west-004",
     );
     assert.equal(p2.region, "eu-central-003");
     assert.equal(p2.isVirtualHosted, true);
+  });
+
+  it("retains the configured signing region for custom S3 endpoints", () => {
+    const endpoint = "https://s3.example.com";
+    assert.equal(parseEndpointAndRegion(endpoint, "my-bucket", " eu-central-003 ").region, "eu-central-003");
+    assert.equal(parseEndpointAndRegion(endpoint, "my-bucket", " ").region, "us-west-004");
   });
 
   it("parses ListObjectsV2 XML, decodes entities, and skips .bzEmpty", () => {
@@ -241,7 +248,18 @@ describe("Cloudflare Worker End-to-End Flows", () => {
       default: mockCache,
     };
 
-    const { env, mockFetch, getB2GetCalls, getLastPutHeaders } = createMockB2Environment();
+    const { env, mockFetch, objects, getB2GetCalls, getLastPutHeaders } = createMockB2Environment({
+      B2_ENDPOINT: "s3.us-east-005.backblazeb2.com",
+      B2_REGION: "us-west-004",
+    });
+    Object.assign(env, { UPLOAD_PREFIX: "legacy" });
+    const legacyKey = "legacy/old.png";
+    objects.set(legacyKey, {
+      body: SAMPLE_PNG,
+      contentType: "image/png",
+      lastModified: "2025-01-01T00:00:00.000Z",
+      etag: '"legacy"',
+    });
 
     // 1. Unauthenticated upload should fail with 401
     const unauthForm = new FormData();
@@ -299,6 +317,7 @@ describe("Cloudflare Worker End-to-End Flows", () => {
     assert.equal(upJson.url, upJson.data.url);
     assert.ok(upJson.links.markdown.includes(upJson.url));
     assert.equal(getLastPutHeaders()["content-length"], String(SAMPLE_PNG.byteLength));
+    assert.match(getLastPutHeaders().authorization, /\/us-east-005\/s3\/aws4_request,/);
 
     // 4. Reject non-image disguised binary
     const fakeExe = new Uint8Array([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00]); // MZ header, no image mime
@@ -374,7 +393,7 @@ describe("Cloudflare Worker End-to-End Flows", () => {
     assert.equal(svgGet.status, 200);
     assert.ok((svgGet.headers.get("Content-Security-Policy") || "").includes("sandbox"));
 
-    // 9. Gallery list returns both uploaded images (and excludes .bzEmpty)
+    // 9. Gallery list returns new and legacy images (and excludes .bzEmpty)
     const listRes = await handleWorkerRequest(
       new Request("https://img.example.com/api/images", {
         headers: { Authorization: "Bearer super-secret-token-123" },
@@ -384,8 +403,29 @@ describe("Cloudflare Worker End-to-End Flows", () => {
       mockFetch,
     );
     assert.equal(listRes.status, 200);
-    const listData = (await listRes.json()) as { items: Array<{ key: string }> };
-    assert.equal(listData.items.length, 2);
+    const listData = (await listRes.json()) as { items: Array<{ key: string }>; folders: string[] };
+    assert.deepEqual(
+      listData.items.map((item) => item.key).sort(),
+      [upJson.key, svgJson.key, legacyKey].sort(),
+    );
+    assert.ok(listData.folders.includes("legacy"));
+
+    const legacyListRes = await handleWorkerRequest(
+      new Request("https://img.example.com/api/images?prefix=legacy", {
+        headers: { Authorization: "Bearer super-secret-token-123" },
+      }),
+      env,
+      undefined,
+      mockFetch,
+    );
+    assert.equal(legacyListRes.status, 200);
+    const legacyList = (await legacyListRes.json()) as { items: Array<{ key: string; url: string }> };
+    const legacyUrl = "https://img.example.com/i/legacy/old.png";
+    assert.deepEqual(legacyList.items.map(({ key, url }) => ({ key, url })), [
+      { key: legacyKey, url: legacyUrl },
+    ]);
+    const legacyImage = await handleWorkerRequest(new Request(legacyUrl), env, undefined, mockFetch);
+    assert.equal(legacyImage.status, 200);
 
     // 10. Delete image -> removes from B2 AND purges Edge Cache
     const delRes = await handleWorkerRequest(

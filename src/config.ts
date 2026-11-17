@@ -6,6 +6,7 @@ const VALID_STRATEGIES = new Set<NamingStrategy>([
   "flat-random",
   "original",
 ]);
+const DEFAULT_B2_REGION = "us-west-004";
 
 export class ConfigError extends Error {
   public readonly missingKeys: string[];
@@ -36,7 +37,7 @@ export function parseNamingStrategy(raw?: string, fallback: NamingStrategy = "da
 export function parseEndpointAndRegion(
   rawEndpoint: string,
   bucket: string,
-  explicitRegion?: string,
+  fallbackRegion?: string,
 ): {
   origin: string;
   host: string;
@@ -60,16 +61,8 @@ export function parseEndpointAndRegion(
   const bucketLower = bucket.trim().toLowerCase();
   const isVirtualHosted = Boolean(bucketLower && hostname.startsWith(`${bucketLower}.`));
 
-  let region = (explicitRegion || "").trim();
-  if (!region) {
-    // Match s3.<region>.backblazeb2.com or <bucket>.s3.<region>.backblazeb2.com
-    const b2Match = hostname.match(/(?:^|\.)s3\.([a-z0-9-]+)\.backblazeb2\.com$/i);
-    if (b2Match?.[1]) {
-      region = b2Match[1];
-    } else {
-      region = "us-west-004";
-    }
-  }
+  const endpointRegion = hostname.match(/(?:^|\.)s3\.([a-z0-9-]+)\.backblazeb2\.com$/i)?.[1];
+  const region = endpointRegion || fallbackRegion?.trim() || DEFAULT_B2_REGION;
 
   return {
     origin: parsed.origin,
@@ -114,7 +107,7 @@ export function loadConfig(env: Env, options: { requireB2?: boolean } = {}): App
     : {
         origin: "https://s3.us-west-004.backblazeb2.com",
         host: "s3.us-west-004.backblazeb2.com",
-        region: (env.B2_REGION || "us-west-004").trim(),
+        region: DEFAULT_B2_REGION,
         isVirtualHosted: false,
       };
 
@@ -144,7 +137,6 @@ export function loadConfig(env: Env, options: { requireB2?: boolean } = {}): App
     isVirtualHostedEndpoint: endpointInfo.isVirtualHosted,
     authToken,
     publicBaseUrl,
-    uploadPrefix: normalizePrefix(env.UPLOAD_PREFIX),
     pathStrategy: parseNamingStrategy(env.PATH_STRATEGY, "date-random"),
     maxFileSizeBytes,
     maxFileSizeMb,
